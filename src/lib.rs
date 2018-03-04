@@ -47,32 +47,6 @@ pub struct AES {
     pub iv: [u8; 16],
 }
 
-// state - array holding the intermediate results during decryption.
-type State = [[u8; 4]; 4];
-
-fn slice_to_state(buf: &[u8]) -> State {
-    // TODO: better error handling
-    assert_eq!(buf.len(), 16);
-
-    let mut out: State = [[0; 4]; 4];
-    for i in 0..4 {
-        for j in 0..4 {
-            out[i][j] = buf[i * 4 + j]
-        }
-    }
-    out
-}
-
-fn state_to_vec(state: &State) -> Vec<u8> {
-    let mut out = vec![0; 16];
-    for i in 0..4 {
-        for j in 0..4 {
-            out[i * 4 + j] = state[i][j];
-        }
-    }
-    out
-}
-
 static sbox: [u8; 256] = [
     0x63,
     0x7c,
@@ -689,11 +663,6 @@ impl AES {
 
         let mut iv = [0u8; 16];
         iv.clone_from_slice(iv_raw);
-        println!(
-            "{:x}\n{:x}",
-            key.as_hex(),
-            round_key.to_vec().as_slice().as_hex()
-        );
         AES {
             mode: mode,
             size: size,
@@ -726,20 +695,20 @@ impl AES {
 
 // This function adds the round key to state.
 // The round key is added to the state by an XOR function.
-fn add_round_key(round: u8, state: &mut State, round_key: &[u8]) {
+fn add_round_key(round: u8, state: &mut [u8], round_key: &[u8]) {
     for i in 0..4u8 {
         for j in 0..4u8 {
-            state[i as usize][j as usize] ^= round_key[((round * Nb * 4) + (i * Nb) + j) as usize];
+            state[(i * 4 + j) as usize] ^= round_key[((round * Nb * 4) + (i * Nb) + j) as usize];
         }
     }
 }
 
 // The SubBytes Function Substitutes the values in the
 // state matrix with values in an S-box.
-fn sub_bytes(state: &mut State) {
+fn sub_bytes(state: &mut [u8]) {
     for i in 0..4 {
         for j in 0..4 {
-            state[j][i] = get_sbox_value(state[j][i]);
+            state[j * 4 + i] = get_sbox_value(state[j * 4 + i]);
         }
     }
 }
@@ -747,62 +716,63 @@ fn sub_bytes(state: &mut State) {
 // The ShiftRows() function shifts the rows in the state to the left.
 // Each row is shifted with different offset.
 // Offset = Row number. So the first row is not shifted.
-fn shift_rows(state: &mut State) {
+fn shift_rows(state: &mut [u8]) {
     let mut temp = 0u8;
 
     // Rotate first row 1 columns to left
-    temp = state[0][1];
-    state[0][1] = state[1][1];
-    state[1][1] = state[2][1];
-    state[2][1] = state[3][1];
-    state[3][1] = temp;
+    temp = state[1];
+    state[1] = state[5];
+    state[5] = state[9];
+    state[9] = state[13];
+    state[13] = temp;
 
     // Rotate second row 2 columns to left
-    temp = state[0][2];
-    state[0][2] = state[2][2];
-    state[2][2] = temp;
+    temp = state[2];
+    state[2] = state[10];
+    state[10] = temp;
 
-    temp = state[1][2];
-    state[1][2] = state[3][2];
-    state[3][2] = temp;
+    temp = state[6];
+    state[6] = state[14];
+    state[14] = temp;
 
     // Rotate third row 3 columns to left
-    temp = state[0][3];
-    state[0][3] = state[3][3];
-    state[3][3] = state[2][3];
-    state[2][3] = state[1][3];
-    state[1][3] = temp;
+    temp = state[3];
+    state[3] = state[15];
+    state[15] = state[11];
+    state[11] = state[7];
+    state[7] = temp;
 }
 
+#[inline]
 fn xtime(x: u8) -> u8 {
     ((x << 1) ^ (((x >> 7) & 1) * 0x1b))
 }
 
 // MixColumns function mixes the columns of the state matrix
-fn mix_columns(state: &mut State) {
+fn mix_columns(state: &mut [u8]) {
     let mut tmp = 0u8;
     let mut tm = 0u8;
     let mut t = 0u8;
 
     for i in 0..4 {
-        t = state[i][0];
-        tmp = state[i][0] ^ state[i][1] ^ state[i][2] ^ state[i][3];
-        tm = state[i][0] ^ state[i][1];
+        t = state[i * 4];
+        tmp = state[i * 4] ^ state[i * 4 + 1] ^ state[i * 4 + 2] ^ state[i * 4 + 3];
+        tm = state[i * 4] ^ state[i * 4 + 1];
         tm = xtime(tm);
 
-        state[i][0] ^= tm ^ tmp;
-        tm = state[i][1] ^ state[i][2];
+        state[i * 4] ^= tm ^ tmp;
+        tm = state[i * 4 + 1] ^ state[i * 4 + 2];
         tm = xtime(tm);
 
-        state[i][1] ^= tm ^ tmp;
-        tm = state[i][2] ^ state[i][3];
+        state[i * 4 + 1] ^= tm ^ tmp;
+        tm = state[i * 4 + 2] ^ state[i * 4 + 3];
         tm = xtime(tm);
 
-        state[i][2] ^= tm ^ tmp;
-        tm = state[i][3] ^ t;
+        state[i * 4 + 2] ^= tm ^ tmp;
+        tm = state[i * 4 + 3] ^ t;
         tm = xtime(tm);
 
-        state[i][3] ^= tm ^ tmp;
+        state[i * 4 + 3] ^= tm ^ tmp;
     }
 }
 
@@ -816,64 +786,68 @@ fn multiply(x: u8, y: u8) -> u8 {
 // InvMixColumns function mixes the columns of the state matrix.
 // The method used to multiply may be difficult to understand for the inexperienced.
 // Please use the references to gain more information.
-fn inv_mix_columns(state: &mut State) {
+fn inv_mix_columns(state: &mut [u8]) {
     let mut a = 0u8;
     let mut b = 0u8;
     let mut c = 0u8;
     let mut d = 0u8;
 
     for i in 0..4 {
-        a = state[i][0];
-        b = state[i][1];
-        c = state[i][2];
-        d = state[i][3];
+        a = state[i * 4];
+        b = state[i * 4 + 1];
+        c = state[i * 4 + 2];
+        d = state[i * 4 + 3];
 
-        state[i][0] = multiply(a, 0x0e) ^ multiply(b, 0x0b) ^ multiply(c, 0x0d) ^ multiply(d, 0x09);
-        state[i][1] = multiply(a, 0x09) ^ multiply(b, 0x0e) ^ multiply(c, 0x0b) ^ multiply(d, 0x0d);
-        state[i][2] = multiply(a, 0x0d) ^ multiply(b, 0x09) ^ multiply(c, 0x0e) ^ multiply(d, 0x0b);
-        state[i][3] = multiply(a, 0x0b) ^ multiply(b, 0x0d) ^ multiply(c, 0x09) ^ multiply(d, 0x0e);
+        state[i * 4] = multiply(a, 0x0e) ^ multiply(b, 0x0b) ^ multiply(c, 0x0d) ^
+            multiply(d, 0x09);
+        state[i * 4 + 1] = multiply(a, 0x09) ^ multiply(b, 0x0e) ^ multiply(c, 0x0b) ^
+            multiply(d, 0x0d);
+        state[i * 4 + 2] = multiply(a, 0x0d) ^ multiply(b, 0x09) ^ multiply(c, 0x0e) ^
+            multiply(d, 0x0b);
+        state[i * 4 + 3] = multiply(a, 0x0b) ^ multiply(b, 0x0d) ^ multiply(c, 0x09) ^
+            multiply(d, 0x0e);
     }
 }
 
 // The SubBytes Function Substitutes the values in the
 // state matrix with values in an S-box.
-fn inv_sub_bytes(state: &mut State) {
+fn inv_sub_bytes(state: &mut [u8]) {
     for i in 0..4 {
         for j in 0..4 {
-            state[j][i] = get_sbox_invert(state[j][i]);
+            state[j * 4 + i] = get_sbox_invert(state[j * 4 + i]);
         }
     }
 }
 
-fn inv_shift_rows(state: &mut State) {
+fn inv_shift_rows(state: &mut [u8]) {
     let mut temp = 0u8;
 
     // Rotate first row 1 columns to right
-    temp = state[3][1];
-    state[3][1] = state[2][1];
-    state[2][1] = state[1][1];
-    state[1][1] = state[0][1];
-    state[0][1] = temp;
+    temp = state[13];
+    state[13] = state[9];
+    state[9] = state[5];
+    state[5] = state[1];
+    state[1] = temp;
 
     // Rotate second row 2 columns to right
-    temp = state[0][2];
-    state[0][2] = state[2][2];
-    state[2][2] = temp;
+    temp = state[2];
+    state[2] = state[10];
+    state[10] = temp;
 
-    temp = state[1][2];
-    state[1][2] = state[3][2];
-    state[3][2] = temp;
+    temp = state[6];
+    state[6] = state[14];
+    state[14] = temp;
 
     // Rotate third row 3 columns to right
-    temp = state[0][3];
-    state[0][3] = state[1][3];
-    state[1][3] = state[2][3];
-    state[2][3] = state[3][3];
-    state[3][3] = temp;
+    temp = state[3];
+    state[3] = state[7];
+    state[7] = state[11];
+    state[11] = state[15];
+    state[15] = temp;
 }
 
 // Cipher is the main function that encrypts the PlainText.
-fn cipher(nr: u8, state: &mut State, round_key: &[u8]) {
+fn cipher(nr: u8, state: &mut [u8], round_key: &[u8]) {
     // Add the First round key to the state before starting the rounds.
     add_round_key(0, state, round_key);
 
@@ -894,7 +868,7 @@ fn cipher(nr: u8, state: &mut State, round_key: &[u8]) {
     add_round_key(nr, state, round_key);
 }
 
-fn inv_cipher(nr: u8, state: &mut State, round_key: &[u8]) {
+fn inv_cipher(nr: u8, state: &mut [u8], round_key: &[u8]) {
     // Add the First round key to the state before starting the rounds.
     add_round_key(nr, state, round_key);
 
@@ -916,29 +890,22 @@ fn inv_cipher(nr: u8, state: &mut State, round_key: &[u8]) {
 }
 
 
-pub fn AES_ECB_encrypt(ctx: &AES, buf: &[u8]) -> Vec<u8> {
-    let mut state = slice_to_state(buf);
+pub fn AES_ECB_encrypt(ctx: &AES, buf: &mut [u8]) {
     // The next function call encrypts the PlainText with the Key using AES algorithm.
-    cipher(ctx.nr(), &mut state, &ctx.round_key);
-    state_to_vec(&state)
+    cipher(ctx.nr(), buf, &ctx.round_key);
 }
 
-pub fn AES_ECB_decrypt(ctx: &AES, buf: &[u8]) -> Vec<u8> {
-    let mut state = slice_to_state(buf);
+pub fn AES_ECB_decrypt(ctx: &AES, buf: &mut [u8]) {
     // The next function call decrypts the PlainText with the Key using AES algorithm.
-    inv_cipher(ctx.nr(), &mut state, &ctx.round_key);
-    state_to_vec(&state)
+    inv_cipher(ctx.nr(), buf, &ctx.round_key);
 }
 
-
-// static void XorWithIv(uint8_t* buf, uint8_t* Iv)
-// {
-//   uint8_t i;
-//   for (i = 0; i < AES_BLOCKLEN; ++i) // The block in AES is always 128bit no matter the key size
-//   {
-//     buf[i] ^= Iv[i];
-//   }
-// }
+fn xor_with_iv(buf: &mut [u8], iv: &[u8]) {
+    // The block in AES is always 128bit no matter the key size
+    for i in 0..(AES_Blocklen as usize) {
+        buf[i] ^= iv[i];
+    }
+}
 
 // void AES_CBC_encrypt_buffer(struct AES_ctx *ctx,uint8_t* buf, uint32_t length)
 // {
@@ -1037,19 +1004,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn state_conversion() {
-        assert_eq!(
-            slice_to_state(&[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]),
-            [[0,1,2,3], [4,5,6,7], [8,9,10,11], [12,13,14,15]],
-        );
-
-        assert_eq!(
-            state_to_vec(&[[0,1,2,3], [4,5,6,7], [8,9,10,11], [12,13,14,15]]),
-            vec![0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15],
-        );
-    }
-
     // F.1.1       ECB-AES128.Encrypt
     #[test]
     fn ecb_aes_128_encrypt() {
@@ -1087,15 +1041,16 @@ mod tests {
         ];
 
         for block in blocks.iter() {
-            let input = block[1];
-            let output = block[2];
+            let mut input = as_vec(block[1]);
+            let output = as_vec(block[2]);
 
             let aes = AES::new(Size::AES128, Mode::ECB, as_vec(key).as_slice(), &[0u8; 16]);
-            let out = AES_ECB_encrypt(&aes, as_vec(input).as_slice());
-            assert_eq!(out, as_vec(output));
+            let mut out = input.as_mut_slice();
+            AES_ECB_encrypt(&aes, out);
+            assert_eq!(out, output.as_slice());
 
-            let back = AES_ECB_decrypt(&aes, out.as_slice());
-            assert_eq!(back, as_vec(input));
+            AES_ECB_decrypt(&aes, out);
+            assert_eq!(out, as_vec(block[1]).as_slice());
         }
     }
 }
