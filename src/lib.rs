@@ -1,30 +1,19 @@
 //! Simple AES implementation.
 
 // The number of columns comprising a state in AES. This is a constant in AES. Value=4
-const Nb: u8 = 4;
+const NB: u8 = 4;
 
 // nk is the number of 32 bit words in a key.
 // nr is the number of rounds in AES Cipher.
 
-const nk_256: u8 = 8;
-const nr_256: u8 = 14;
+const NK_256: u8 = 8;
+const NR_256: u8 = 14;
 
-const nk_192: u8 = 6;
-const nr_192: u8 = 12;
+const NK_192: u8 = 6;
+const NR_192: u8 = 12;
 
-const nk_128: u8 = 4;
-const nr_128: u8 = 10;
-
-const AES_KEYLEN_256: u8 = 32;
-const AES_keyExpSize_256: u8 = 240;
-
-const AES_KEYLEN_192: u8 = 24;
-const AES_keyExpSize_192: u8 = 208;
-
-const AES_KEYLEN_128: u8 = 16;
-const AES_keyExpSize_128: u8 = 176;
-
-const AES_Blocklen: u16 = 16;
+const NK_128: u8 = 4;
+const NR_128: u8 = 10;
 
 pub enum Mode {
     CTR,
@@ -45,7 +34,7 @@ pub struct AES {
     pub iv: [u8; 16],
 }
 
-static sbox: [u8; 256] = [
+static SBOX: [u8; 256] = [
     0x63,
     0x7c,
     0x77,
@@ -304,7 +293,7 @@ static sbox: [u8; 256] = [
     0x16,
 ];
 
-static rsbox: [u8; 256] = [
+static RSBOX: [u8; 256] = [
     0x52,
     0x09,
     0x6a,
@@ -565,7 +554,7 @@ static rsbox: [u8; 256] = [
 
 // The round constant word array, rcon[i], contains the values given by
 // x to the power (i-1) being powers of x (x is denoted as {02}) in the field GF(2^8)
-static rcon: [u8; 11] = [
+static RCON: [u8; 11] = [
     0x8d,
     0x01,
     0x02,
@@ -580,17 +569,17 @@ static rcon: [u8; 11] = [
 ];
 
 fn get_sbox_value(num: u8) -> u8 {
-    sbox[num as usize]
+    SBOX[num as usize]
 }
 
 fn get_sbox_invert(num: u8) -> u8 {
-    rsbox[num as usize]
+    RSBOX[num as usize]
 }
 
-// This function produces Nb(nr+1) round keys. The round keys are used in each round to decrypt the states.
+// This function produces NB(nr+1) round keys. The round keys are used in each round to decrypt the states.
 fn key_expansion(nk: u8, nr: u8, round_key: &mut [u8], key: &[u8]) {
-    let mut j = 0;
-    let mut k = 0;
+    let mut j: u8;
+    let mut k: u8;
     let mut tempa = [0u8; 4]; // Used for the column/row operations
 
     // The first round key is the key itself.
@@ -602,7 +591,7 @@ fn key_expansion(nk: u8, nr: u8, round_key: &mut [u8], key: &[u8]) {
     }
 
     // All other round keys are found from the previous round keys.
-    for i in nk..(Nb * (nr + 1)) {
+    for i in nk..(NB * (nr + 1)) {
         k = (i - 1) * 4;
         tempa[0] = round_key[(k + 0) as usize];
         tempa[1] = round_key[(k + 1) as usize];
@@ -629,7 +618,7 @@ fn key_expansion(nk: u8, nr: u8, round_key: &mut [u8], key: &[u8]) {
             tempa[2] = get_sbox_value(tempa[2]);
             tempa[3] = get_sbox_value(tempa[3]);
 
-            tempa[0] = tempa[0] ^ rcon[(i / nk) as usize];
+            tempa[0] = tempa[0] ^ RCON[(i / nk) as usize];
         }
 
         if i % nk == 4 {
@@ -653,9 +642,9 @@ impl AES {
     pub fn new(size: Size, mode: Mode, key: &[u8], iv_raw: &[u8]) -> AES {
         let mut round_key = [0u8; 240];
         match size {
-            Size::AES128 => key_expansion(nk_128, nr_128, &mut round_key, key),
-            Size::AES192 => key_expansion(nk_192, nr_192, &mut round_key, key),
-            Size::AES256 => key_expansion(nk_256, nr_256, &mut round_key, key),
+            Size::AES128 => key_expansion(NK_128, NR_128, &mut round_key, key),
+            Size::AES192 => key_expansion(NK_192, NR_192, &mut round_key, key),
+            Size::AES256 => key_expansion(NK_256, NR_256, &mut round_key, key),
         };
 
         let mut iv = [0u8; 16];
@@ -674,17 +663,17 @@ impl AES {
 
     pub fn nr(&self) -> u8 {
         match self.size {
-            Size::AES128 => nr_128,
-            Size::AES192 => nr_192,
-            Size::AES256 => nr_256,
+            Size::AES128 => NR_128,
+            Size::AES192 => NR_192,
+            Size::AES256 => NR_256,
         }
     }
 
     pub fn nk(&self) -> u8 {
         match self.size {
-            Size::AES128 => nk_128,
-            Size::AES192 => nk_192,
-            Size::AES256 => nk_256,
+            Size::AES128 => NK_128,
+            Size::AES192 => NK_192,
+            Size::AES256 => NK_256,
         }
     }
 }
@@ -695,7 +684,7 @@ impl AES {
 fn add_round_key(round: u8, state: &mut [u8], round_key: &[u8]) {
     for i in 0..4u8 {
         for j in 0..4u8 {
-            state[(i * 4 + j) as usize] ^= round_key[((round * Nb * 4) + (i * Nb) + j) as usize];
+            state[(i * 4 + j) as usize] ^= round_key[((round * NB * 4) + (i * NB) + j) as usize];
         }
     }
 }
@@ -714,10 +703,8 @@ fn sub_bytes(state: &mut [u8]) {
 // Each row is shifted with different offset.
 // Offset = Row number. So the first row is not shifted.
 fn shift_rows(state: &mut [u8]) {
-    let mut temp = 0u8;
-
     // Rotate first row 1 columns to left
-    temp = state[1];
+    let mut temp = state[1];
     state[1] = state[5];
     state[5] = state[9];
     state[9] = state[13];
@@ -747,9 +734,9 @@ fn xtime(x: u8) -> u8 {
 
 // MixColumns function mixes the columns of the state matrix
 fn mix_columns(state: &mut [u8]) {
-    let mut tmp = 0u8;
-    let mut tm = 0u8;
-    let mut t = 0u8;
+    let mut tmp: u8;
+    let mut tm: u8;
+    let mut t: u8;
 
     for i in 0..4 {
         t = state[i * 4];
@@ -784,10 +771,10 @@ fn multiply(x: u8, y: u8) -> u8 {
 // The method used to multiply may be difficult to understand for the inexperienced.
 // Please use the references to gain more information.
 fn inv_mix_columns(state: &mut [u8]) {
-    let mut a = 0u8;
-    let mut b = 0u8;
-    let mut c = 0u8;
-    let mut d = 0u8;
+    let mut a: u8;
+    let mut b: u8;
+    let mut c: u8;
+    let mut d: u8;
 
     for i in 0..4 {
         a = state[i * 4];
@@ -817,7 +804,7 @@ fn inv_sub_bytes(state: &mut [u8]) {
 }
 
 fn inv_shift_rows(state: &mut [u8]) {
-    let mut temp = 0u8;
+    let mut temp: u8;
 
     // Rotate first row 1 columns to right
     temp = state[13];
@@ -887,29 +874,29 @@ fn inv_cipher(nr: u8, state: &mut [u8], round_key: &[u8]) {
 }
 
 
-pub fn AES_ECB_encrypt(ctx: &AES, buf: &mut [u8]) {
+pub fn aes_ecb_encrypt(ctx: &AES, buf: &mut [u8]) {
     // The next function call encrypts the PlainText with the Key using AES algorithm.
     cipher(ctx.nr(), buf, &ctx.round_key);
 }
 
-pub fn AES_ECB_decrypt(ctx: &AES, buf: &mut [u8]) {
+pub fn aes_ecb_decrypt(ctx: &AES, buf: &mut [u8]) {
     // The next function call decrypts the PlainText with the Key using AES algorithm.
     inv_cipher(ctx.nr(), buf, &ctx.round_key);
 }
 
 fn xor_with_iv(buf: &mut [u8], iv: &[u8]) {
     // The block in AES is always 128bit no matter the key size
-    for i in 0..(AES_Blocklen as usize) {
+    for i in 0..16 {
         buf[i] ^= iv[i];
     }
 }
 
-pub fn AES_CBC_encrypt_buffer(ctx: &mut AES, buf: &mut [u8]) {
+pub fn aes_cbc_encrypt_buffer(ctx: &mut AES, buf: &mut [u8]) {
     // uint8_t *Iv = ctx->Iv;
     let mut hist = [0u8; 16];
     hist.copy_from_slice(&ctx.iv);
     let mut iv: &mut [u8] = &mut hist;
-    for chunk in buf.chunks_mut(AES_Blocklen as usize) {
+    for chunk in buf.chunks_mut(16 as usize) {
         xor_with_iv(chunk, &iv);
         cipher(ctx.nr(), chunk, &ctx.round_key);
         iv = chunk;
@@ -919,9 +906,9 @@ pub fn AES_CBC_encrypt_buffer(ctx: &mut AES, buf: &mut [u8]) {
     ctx.iv.copy_from_slice(iv)
 }
 
-pub fn AES_CBC_decrypt_buffer(ctx: &mut AES, buf: &mut [u8]) {
+pub fn aes_cbc_decrypt_buffer(ctx: &mut AES, buf: &mut [u8]) {
     let mut next_iv = [0u8; 16];
-    for chunk in buf.chunks_mut(AES_Blocklen as usize) {
+    for chunk in buf.chunks_mut(16 as usize) {
         next_iv.copy_from_slice(chunk);
         inv_cipher(ctx.nr(), chunk, &ctx.round_key);
         xor_with_iv(chunk, &ctx.iv);
@@ -932,13 +919,13 @@ pub fn AES_CBC_decrypt_buffer(ctx: &mut AES, buf: &mut [u8]) {
 
 // Symmetrical operation: same function for encrypting as for decrypting.
 // Note: Any IV/nonce should never be reused with the same key
-pub fn AES_CTR_xcrypt_buffer(ctx: &mut AES, buf: &mut [u8]) {
-    let mut bi = AES_Blocklen;
+pub fn aes_ctr_xcrypt_buffer(ctx: &mut AES, buf: &mut [u8]) {
+    let mut bi = 16;
     let mut buffer = [0u8; 16];
 
     for i in 0..buf.len() {
         /* we need to regen xor complement in buffer */
-        if (bi == AES_Blocklen) {
+        if bi == 16 {
             buffer.copy_from_slice(&ctx.iv);
             cipher(ctx.nr(), &mut buffer, &ctx.round_key);
 
@@ -954,7 +941,7 @@ pub fn AES_CTR_xcrypt_buffer(ctx: &mut AES, buf: &mut [u8]) {
             bi = 0;
         }
 
-        buf[i] = (buf[i] ^ buffer[bi as usize]);
+        buf[i] = buf[i] ^ buffer[bi as usize];
         bi += 1;
     }
 }

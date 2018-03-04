@@ -62,10 +62,10 @@ fn ecb_aes_128_encrypt() {
         let output = as_vec(block[3]);
 
         let mut out = input.as_mut_slice();
-        AES_ECB_encrypt(&aes, out);
+        aes_ecb_encrypt(&aes, out);
         assert_eq!(out, output.as_slice());
 
-        AES_ECB_decrypt(&aes, out);
+        aes_ecb_decrypt(&aes, out);
         assert_eq!(out, as_vec(block[0]).as_slice());
     }
 }
@@ -119,7 +119,7 @@ fn cbc_aes_128_encrypt() {
         let output = as_vec(block[3]);
 
         let mut out = input.as_mut_slice();
-        AES_CBC_encrypt_buffer(&mut aes, out);
+        aes_cbc_encrypt_buffer(&mut aes, out);
         assert_eq!(out, output.as_slice());
     }
 }
@@ -173,7 +173,7 @@ fn cbc_aes_128_decrypt() {
         let output = as_vec(block[3]);
 
         let mut out = input.as_mut_slice();
-        AES_CBC_decrypt_buffer(&mut aes, out);
+        aes_cbc_decrypt_buffer(&mut aes, out);
         assert_eq!(out, output.as_slice());
     }
 }
@@ -227,7 +227,7 @@ fn ctr_aes_128_encrypt() {
         let output = as_vec(block[3]);
 
         let mut out = input.as_mut_slice();
-        AES_CTR_xcrypt_buffer(&mut aes, out);
+        aes_ctr_xcrypt_buffer(&mut aes, out);
         assert_eq!(out, output.as_slice());
     }
 }
@@ -281,7 +281,7 @@ fn ctr_aes_128_decrypt() {
         let output = as_vec(block[3]);
 
         let mut out = input.as_mut_slice();
-        AES_CTR_xcrypt_buffer(&mut aes, out);
+        aes_ctr_xcrypt_buffer(&mut aes, out);
         assert_eq!(out, output.as_slice());
     }
 }
