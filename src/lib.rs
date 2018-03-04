@@ -1,8 +1,6 @@
-extern crate hex_slice;
-use hex_slice::AsHex;
+//! Simple AES implementation.
 
 // The number of columns comprising a state in AES. This is a constant in AES. Value=4
-
 const Nb: u8 = 4;
 
 // nk is the number of 32 bit words in a key.
@@ -651,7 +649,6 @@ fn key_expansion(nk: u8, nr: u8, round_key: &mut [u8], key: &[u8]) {
     }
 }
 
-
 impl AES {
     pub fn new(size: Size, mode: Mode, key: &[u8], iv_raw: &[u8]) -> AES {
         let mut round_key = [0u8; 240];
@@ -907,150 +904,57 @@ fn xor_with_iv(buf: &mut [u8], iv: &[u8]) {
     }
 }
 
-// void AES_CBC_encrypt_buffer(struct AES_ctx *ctx,uint8_t* buf, uint32_t length)
-// {
-//   uintptr_t i;
-//   uint8_t *Iv = ctx->Iv;
-//   for (i = 0; i < length; i += AES_BLOCKLEN)
-//   {
-//     XorWithIv(buf, Iv);
-//     Cipher((state_t*)buf, ctx->round_key);
-//     Iv = buf;
-//     buf += AES_BLOCKLEN;
-//     //printf("Step %d - %d", i/16, i);
-//   }
-//   /* store Iv in ctx for next call */
-//   memcpy(ctx->Iv, Iv, AES_BLOCKLEN);
-// }
-
-// void AES_CBC_decrypt_buffer(struct AES_ctx* ctx, uint8_t* buf,  uint32_t length)
-// {
-//   uintptr_t i;
-//   uint8_t storeNextIv[AES_BLOCKLEN];
-//   for (i = 0; i < length; i += AES_BLOCKLEN)
-//   {
-//     memcpy(storeNextIv, buf, AES_BLOCKLEN);
-//     InvCipher((state_t*)buf, ctx->round_key);
-//     XorWithIv(buf, ctx->Iv);
-//     memcpy(ctx->Iv, storeNextIv, AES_BLOCKLEN);
-//     buf += AES_BLOCKLEN;
-//   }
-
-// }
-
-// #endif // #if defined(CBC) && (CBC == 1)
-
-
-
-// #if defined(CTR) && (CTR == 1)
-
-// /* Symmetrical operation: same function for encrypting as for decrypting. Note any IV/nonce should never be reused with the same key */
-// void AES_CTR_xcrypt_buffer(struct AES_ctx* ctx, uint8_t* buf, uint32_t length)
-// {
-//   uint8_t buffer[AES_BLOCKLEN];
-
-//   unsigned i;
-//   int bi;
-//   for (i = 0, bi = AES_BLOCKLEN; i < length; ++i, ++bi)
-//   {
-//     if (bi == AES_BLOCKLEN) /* we need to regen xor compliment in buffer */
-//     {
-
-//       memcpy(buffer, ctx->Iv, AES_BLOCKLEN);
-//       Cipher((state_t*)buffer,ctx->round_key);
-
-//       /* Increment Iv and handle overflow */
-//       for (bi = (AES_BLOCKLEN - 1); bi >= 0; --bi)
-//       {
-// 	/* inc will owerflow */
-//         if (ctx->Iv[bi] == 255)
-// 	{
-//           ctx->Iv[bi] = 0;
-//           continue;
-//         }
-//         ctx->Iv[bi] += 1;
-//         break;
-//       }
-//       bi = 0;
-//     }
-
-//     buf[i] = (buf[i] ^ buffer[bi]);
-//   }
-// }
-
-
-#[cfg(test)]
-mod tests {
-    extern crate data_encoding;
-    extern crate hex_slice;
-
-    use self::data_encoding::HEXLOWER;
-    use super::*;
-    use hex_slice::AsHex;
-
-    // const plaintext = "6bc1bee22e409f96e93d7e117393172aae2d8a571e03ac9c9eb76fac45af8e5130c81c46a35ce411e5fbc1191a0a52eff69f2445df4f9b17ad2b417be66c3710";
-
-    fn as_vec(input: &str) -> Vec<u8> {
-        HEXLOWER.decode(input.as_bytes()).unwrap()
+pub fn AES_CBC_encrypt_buffer(ctx: &mut AES, buf: &mut [u8]) {
+    // uint8_t *Iv = ctx->Iv;
+    let mut hist = [0u8; 16];
+    hist.copy_from_slice(&ctx.iv);
+    let mut iv: &mut [u8] = &mut hist;
+    for chunk in buf.chunks_mut(AES_Blocklen as usize) {
+        xor_with_iv(chunk, &iv);
+        cipher(ctx.nr(), chunk, &ctx.round_key);
+        iv = chunk;
+        //printf("Step %d - %d", i/16, i);
     }
+    /* store Iv in ctx for next call */
+    ctx.iv.copy_from_slice(iv)
+}
 
-    // based on https://nvlpubs.nist.gov/nistpubs/Legacy/SP/nistspecialpublication800-38a.pdf Appendix F
-
-    #[test]
-    fn vec_conversion() {
-        assert_eq!(
-            as_vec("ffffff0100"),
-            vec![255,255,255, 1, 0],
-        );
+pub fn AES_CBC_decrypt_buffer(ctx: &mut AES, buf: &mut [u8]) {
+    let mut next_iv = [0u8; 16];
+    for chunk in buf.chunks_mut(AES_Blocklen as usize) {
+        next_iv.copy_from_slice(chunk);
+        inv_cipher(ctx.nr(), chunk, &ctx.round_key);
+        xor_with_iv(chunk, &ctx.iv);
+        ctx.iv.copy_from_slice(&next_iv);
     }
+}
 
-    // F.1.1       ECB-AES128.Encrypt
-    #[test]
-    fn ecb_aes_128_encrypt() {
-        let key = "2b7e151628aed2a6abf7158809cf4f3c";
 
-        let blocks = [
-            [
-                // Block #1
-                "6bc1bee22e409f96e93d7e117393172a",
-                "6bc1bee22e409f96e93d7e117393172a",
-                "3ad77bb40d7a3660a89ecaf32466ef97",
-                "3ad77bb40d7a3660a89ecaf32466ef97",
-            ],
-            [
-                // Block #2
-                "ae2d8a571e03ac9c9eb76fac45af8e51",
-                "ae2d8a571e03ac9c9eb76fac45af8e51",
-                "f5d3d58503b9699de785895a96fdbaaf",
-                "f5d3d58503b9699de785895a96fdbaaf",
-            ],
-            [
-                // Block #3
-                "30c81c46a35ce411e5fbc1191a0a52ef",
-                "30c81c46a35ce411e5fbc1191a0a52ef",
-                "43b1cd7f598ece23881b00e3ed030688",
-                "43b1cd7f598ece23881b00e3ed030688",
-            ],
-            [
-                // Block #4
-                "f69f2445df4f9b17ad2b417be66c3710",
-                "f69f2445df4f9b17ad2b417be66c3710",
-                "7b0c785e27e8ad3f8223207104725dd4",
-                "7b0c785e27e8ad3f8223207104725dd4",
-            ],
-        ];
+// Symmetrical operation: same function for encrypting as for decrypting.
+// Note: Any IV/nonce should never be reused with the same key
+pub fn AES_CTR_xcrypt_buffer(ctx: &mut AES, buf: &mut [u8]) {
+    let mut bi = AES_Blocklen;
+    let mut buffer = [0u8; 16];
 
-        for block in blocks.iter() {
-            let mut input = as_vec(block[1]);
-            let output = as_vec(block[2]);
+    for i in 0..buf.len() {
+        /* we need to regen xor complement in buffer */
+        if (bi == AES_Blocklen) {
+            buffer.copy_from_slice(&ctx.iv);
+            cipher(ctx.nr(), &mut buffer, &ctx.round_key);
 
-            let aes = AES::new(Size::AES128, Mode::ECB, as_vec(key).as_slice(), &[0u8; 16]);
-            let mut out = input.as_mut_slice();
-            AES_ECB_encrypt(&aes, out);
-            assert_eq!(out, output.as_slice());
-
-            AES_ECB_decrypt(&aes, out);
-            assert_eq!(out, as_vec(block[1]).as_slice());
+            /* Increment Iv and handle overflow */
+            for el in ctx.iv.iter_mut().rev() {
+                if *el == 255 {
+                    *el = 0;
+                    continue;
+                }
+                *el += 1;
+                break;
+            }
+            bi = 0;
         }
+
+        buf[i] = (buf[i] ^ buffer[bi as usize]);
+        bi += 1;
     }
 }
